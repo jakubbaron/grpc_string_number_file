@@ -28,6 +28,17 @@ class ChallengeServiceImpl final: public Handler::Service {
     reply->set_message(received * 2);
     return Status::OK;
   }
+  Status ReceiveFile(::grpc::ServerContext* context,
+      ::grpc::ServerReader< ::challenge::FileChunk>* reader,
+      ::challenge::FileAck* response) override { 
+    ::challenge::FileChunk file_chunk;
+    while(reader->Read(&file_chunk))
+    {
+      std::cout << "Received FileChunk: " << file_chunk.filename() << std::endl;
+    }
+    response->set_filename(file_chunk.filename());
+    return Status::OK;
+  }
 };
 
 void RunServer() {
