@@ -6,6 +6,9 @@
 #include "challenge.grpc.pb.h"
 #include <vector>
 
+#include <fstream>
+#include <cstddef>
+
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
@@ -59,15 +62,61 @@ class ChallengeClient {
 
       std::unique_ptr<::grpc::ClientWriter<challenge::FileChunk> > writer(
         stub_->ReceiveFile(&context, &file_ack));
-      std::vector<std::string> fnames = {"first", "second"};
-      for(int i = 0; i < 2; ++i) {
-        challenge::FileChunk file_chunk;
-        file_chunk.set_filename(fnames[i]);
+      //TODO: replace with reading actual chunks of the file
+      //TODO: not hardcode the file
+
+      const std::string fname = "test.img";
+      const size_t CHUNK_SIZE = 1024 * 1024; // 1MB
+      std::ifstream in_file;
+      in_file.open(fname, std::ios::in|std::ios::binary|std::ios::ate);
+      if(!in_file.is_open()) {
+        std::cerr << "Can't open file[" << fname << "]" << std::endl;
+        return "File[" + fname + "] reading failed";
+      }
+      in_file.seekg(0, std::ios::end);
+      std::ifstream::pos_type file_size = in_file.tellg(); //tells the size of the file
+      std::cout << "Size of the file: " << file_size << std::endl;
+      const uint32_t number_of_chunks = static_cast<uint32_t>(file_size/CHUNK_SIZE) 
+        + static_cast<uint32_t>(file_size%CHUNK_SIZE);
+      std::cout << "We will create: " << number_of_chunks << " chunks" << std::endl;
+      in_file.seekg(0, std::ios::beg);
+
+      char buffer[CHUNK_SIZE];
+      uint32_t chunk_number = 0;
+      size_t read_size = CHUNK_SIZE;
+      std::ifstream::pos_type current_pos = in_file.tellg();
+      while(current_pos < file_size) {
+        std::cout << "Current position: " << current_pos << std::endl;
+        std::cout << "Chunk number: " << chunk_number << std::endl;
+        if(file_size - current_pos >= CHUNK_SIZE) {
+          read_size = CHUNK_SIZE;
+        } else {
+          read_size = file_size - current_pos;
+        }
+        std::cout << "Reading now: " << read_size << std::endl;
+        if(!in_file.read(buffer, read_size)) {
+          std::cerr << "Failed to read[" << read_size 
+                    << "] from file[" << fname 
+                    << "] at[" << current_pos << "]" 
+                    << std::endl;
+          break;
+        }
+        challenge::FileChunk file_chunk; 
+        //TODO: create a pointer and just change relevant data in the object
+        file_chunk.set_filename(fname);
+        file_chunk.set_data(buffer, read_size);
+        file_chunk.set_chunknumber(chunk_number++);
+        file_chunk.set_islastchunk(chunk_number == number_of_chunks);
+        file_chunk.set_sizeinbytes(read_size);
+
+        //As the last step, write the chunk to the stream
         if(!writer->Write(file_chunk)) {
           std::cerr << "Broken stream!" << std::endl;
           break;
         }
+        current_pos = in_file.tellg();
       }
+
       writer->WritesDone();
       Status status = writer->Finish();
       if(status.ok()) {

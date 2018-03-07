@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <fstream>
 
 #include <grpc++/grpc++.h>
 #include "challenge.grpc.pb.h"
@@ -32,11 +33,33 @@ class ChallengeServiceImpl final: public Handler::Service {
       ::grpc::ServerReader< ::challenge::FileChunk>* reader,
       ::challenge::FileAck* response) override { 
     ::challenge::FileChunk file_chunk;
+    size_t len = 0;
+    if(!reader->Read(&file_chunk))
+      return Status::OK;
+
+    std::string filename = "s_" + file_chunk.filename();
+    std::ofstream received_file;
+    received_file.open(filename.c_str(), std::ios::out | std::ios::binary | std::ios::app);
+    if(!received_file.is_open()) {
+      std::cerr << "Can't open file[" << filename << "]" << std::endl;
+      return Status::OK;
+    }
+    std::string buffer(file_chunk.data());
+    received_file.write(buffer.c_str(), file_chunk.sizeinbytes());
     while(reader->Read(&file_chunk))
     {
       std::cout << "Received FileChunk: " << file_chunk.filename() << std::endl;
+      std::cout << "Received Chunk: " << file_chunk.chunknumber() << std::endl;
+      std::cout << "This is " << (file_chunk.islastchunk() ? "" : "NOT ") << "last file chunk" << std::endl;
+      len += file_chunk.sizeinbytes();
+      std::cout << "Read: " << len << " bytes" << std::endl;
+
+      buffer.clear();
+      buffer = file_chunk.data();
+      received_file.write(buffer.c_str(), file_chunk.sizeinbytes());
     }
     response->set_filename(file_chunk.filename());
+    received_file.close();
     return Status::OK;
   }
 };
