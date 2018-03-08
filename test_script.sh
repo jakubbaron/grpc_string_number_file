@@ -1,3 +1,5 @@
+#!/bin/bash
+
 test_file_name="test.img"
 test_server_file_name="server_storage/test.img"
 
@@ -14,7 +16,7 @@ make
 sleep 1
 ./challenge_client 
 sleep 5
-ps aux | grep -ie challenge_server | awk '{print "kill -9 " $2}'
+$(ps aux | grep -ie challenge_server | grep -v grep | awk '{print "kill " $2}')
 
 diff -s $test_file_name $test_server_file_name
 
