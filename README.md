@@ -36,4 +36,6 @@ $ ./challenge_client
 ```
 
 ### Test script:
+```sh
 sh test_script.sh
+```
