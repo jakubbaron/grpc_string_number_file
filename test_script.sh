@@ -21,6 +21,7 @@ $(ps aux | grep -ie challenge_server | grep -v grep | awk '{print "kill " $2}')
 diff -s $test_file_name $test_server_file_name
 
 ###Cleaning up###
+echo "Cleaning up after tests"
 rm $test_file_name
 rm $test_server_file_name
 make clean
