@@ -58,8 +58,10 @@ class ChallengeServiceImpl final: public Handler::Service {
       buffer = file_chunk.data();
       received_file.write(buffer.c_str(), file_chunk.sizeinbytes());
     }
-    response->set_filename(file_chunk.filename());
+
     received_file.close();
+
+    response->set_filename(file_chunk.filename());
     return Status::OK;
   }
 };

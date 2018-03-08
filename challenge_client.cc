@@ -18,6 +18,102 @@ using challenge::NumberRequest;
 using challenge::NumberReply;
 using challenge::Handler;
 
+const size_t CHUNK_SIZE = 1024 * 1024;
+
+size_t get_file_size(std::ifstream& in_file) {
+  if(!in_file.is_open())
+    return 0;
+
+  std::ifstream::pos_type current_pos = in_file.tellg();
+  std::cout << "Cursor at the beginning: " << current_pos << std::endl;
+  in_file.seekg(0, std::ios::end);
+  std::ifstream::pos_type file_size = in_file.tellg(); //tells the size of the file
+  in_file.seekg(current_pos, std::ios::cur);
+  std::cout << "Moved cursor to: " << current_pos << std::endl;
+
+  return file_size;
+}
+
+class FileChunker {
+  public:
+    FileChunker(const std::string& filename):
+      filename_(filename),
+      valid_file_(false),
+      number_of_chunks_(0),
+      chunk_number_(0),
+      current_pos_(0)
+    {
+      in_file_.open(filename_, std::ios::in|std::ios::binary|std::ios::ate);
+      valid_file_ = in_file_.is_open();
+      if(!valid_file_) {
+        std::cerr << "Can't open file[" << filename_ << "]" << std::endl;
+        return;
+      }
+
+      in_file_.seekg(0, std::ios::beg);
+
+      file_size_ = get_file_size(in_file_);
+
+      std::cout << "Size of the file: " << file_size_ << std::endl;
+
+      number_of_chunks_ = static_cast<uint32_t>(file_size_/CHUNK_SIZE) 
+        + static_cast<uint32_t>(file_size_%CHUNK_SIZE);
+      std::cout << "We will create: " << number_of_chunks_ << " chunks" << std::endl;
+
+      in_file_.seekg(0, std::ios::beg);
+      current_pos_ = in_file_.tellg();
+    }
+    void reset_to_begin_of_file() {
+      number_of_chunks_ = 0;
+      chunk_number_ = 0;
+      in_file_.seekg(0, std::ios::beg);
+      current_pos_ = 0;
+    }
+
+    bool get_next_chunk(challenge::FileChunk& file_chunk) {
+      if(!valid_file_)
+        return false;
+      if(current_pos_ >= file_size_)
+        return false;
+
+      std::cout << "Current position: " << current_pos_ << std::endl;
+      std::cout << "Chunk number: " << chunk_number_ << std::endl;
+      size_t read_size(CHUNK_SIZE);
+      if(file_size_ - current_pos_ < CHUNK_SIZE) {
+        read_size = file_size_ - current_pos_;
+      }
+      std::cout << "Reading now: " << read_size << std::endl;
+      if(!in_file_.read(buffer_, read_size)) {
+        std::cerr << "Failed to read[" << read_size 
+                  << "] from file[" << filename_
+                  << "] at[" << current_pos_ << "]" 
+                  << std::endl;
+        return false;
+      }
+      file_chunk.set_filename(filename_);
+      file_chunk.set_data(buffer_, read_size);
+      file_chunk.set_chunknumber(chunk_number_++);
+      file_chunk.set_islastchunk(chunk_number_ == number_of_chunks_);
+      file_chunk.set_sizeinbytes(read_size);
+      current_pos_ = in_file_.tellg();
+
+      return true;
+    }
+
+  private:
+    const std::string filename_;
+
+    bool valid_file_;
+    uint32_t number_of_chunks_;
+    char buffer_[CHUNK_SIZE];
+    uint32_t chunk_number_;
+    std::ifstream::pos_type current_pos_;  
+    size_t file_size_;
+
+    std::ifstream in_file_;
+};
+
+
 class ChallengeClient {
   public:
     ChallengeClient(std::shared_ptr<Channel> channel):
@@ -62,82 +158,30 @@ class ChallengeClient {
 
       std::unique_ptr<::grpc::ClientWriter<challenge::FileChunk> > writer(
         stub_->ReceiveFile(&context, &file_ack));
-      //TODO: replace with reading actual chunks of the file
-      //TODO: not hardcode the file
 
-      const std::string fname = "test.img";
-      const size_t CHUNK_SIZE = 1024 * 1024; // 1MB
-      std::ifstream in_file;
-      in_file.open(fname, std::ios::in|std::ios::binary|std::ios::ate);
-      if(!in_file.is_open()) {
-        std::cerr << "Can't open file[" << fname << "]" << std::endl;
-        return "File[" + fname + "] reading failed";
-      }
-      in_file.seekg(0, std::ios::end);
-      std::ifstream::pos_type file_size = in_file.tellg(); //tells the size of the file
-      std::cout << "Size of the file: " << file_size << std::endl;
-      const uint32_t number_of_chunks = static_cast<uint32_t>(file_size/CHUNK_SIZE) 
-        + static_cast<uint32_t>(file_size%CHUNK_SIZE);
-      std::cout << "We will create: " << number_of_chunks << " chunks" << std::endl;
-      in_file.seekg(0, std::ios::beg);
-
-      char buffer[CHUNK_SIZE];
-      uint32_t chunk_number = 0;
-      size_t read_size = CHUNK_SIZE;
-      std::ifstream::pos_type current_pos = in_file.tellg();
-      while(current_pos < file_size) {
-        std::cout << "Current position: " << current_pos << std::endl;
-        std::cout << "Chunk number: " << chunk_number << std::endl;
-        if(file_size - current_pos >= CHUNK_SIZE) {
-          read_size = CHUNK_SIZE;
-        } else {
-          read_size = file_size - current_pos;
-        }
-        std::cout << "Reading now: " << read_size << std::endl;
-        if(!in_file.read(buffer, read_size)) {
-          std::cerr << "Failed to read[" << read_size 
-                    << "] from file[" << fname 
-                    << "] at[" << current_pos << "]" 
-                    << std::endl;
-          break;
-        }
-        challenge::FileChunk file_chunk; 
-        //TODO: create a pointer and just change relevant data in the object
-        file_chunk.set_filename(fname);
-        file_chunk.set_data(buffer, read_size);
-        file_chunk.set_chunknumber(chunk_number++);
-        file_chunk.set_islastchunk(chunk_number == number_of_chunks);
-        file_chunk.set_sizeinbytes(read_size);
-
-        //As the last step, write the chunk to the stream
+      FileChunker file_chunker(filename);
+      challenge::FileChunk file_chunk; 
+      while(file_chunker.get_next_chunk(file_chunk)) {
         if(!writer->Write(file_chunk)) {
           std::cerr << "Broken stream!" << std::endl;
           break;
         }
-        current_pos = in_file.tellg();
       }
 
       writer->WritesDone();
       Status status = writer->Finish();
+
       if(status.ok()) {
         std::cout << "Finished writing to the stream" << std::endl;
       } else {
         std::cerr << "SendFile rpc failed." << std::endl;
       }
+
       return file_ack.filename();
     }
 
   private:
     std::unique_ptr<Handler::Stub> stub_;
-};
-
-class FileChunker {
-  public:
-    FileChunker(const std::string& filepath):
-      filepath_(filepath)
-    {}
-  private:
-    const std::string filepath_;
 };
 
 int main(int argc, char** argv) {
@@ -151,7 +195,7 @@ int main(int argc, char** argv) {
   reply = challenge.SendNumber(num);
   std::cout << "SendNumber: Server said: " << reply << std::endl;
 
-  std::string filename("test filename");
+  std::string filename("test.img");
   reply = challenge.SendFile(filename);
   std::cout << "SendFile: Server said: " << reply << std::endl;
 
