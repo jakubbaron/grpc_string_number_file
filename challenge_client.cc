@@ -4,9 +4,7 @@
 #include <string>
 
 #include <grpc++/grpc++.h>
-
 #include "challenge.grpc.pb.h"
-#include <vector>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -83,6 +81,39 @@ class ChallengeClient {
       return file_ack.filename();
     }
 
+    //TODO: take second parameter where to store received file
+    std::string RequestFile(const std::string& filename) {
+      challenge::FileRequest file_request;
+      file_request.set_filename(filename);
+
+      ClientContext context;
+      std::unique_ptr<::grpc::ClientReader<challenge::FileChunk> > reader(
+          stub_->RequestFile(&context, file_request));
+
+      ::challenge::FileChunk file_chunk;
+      if(!reader->Read(&file_chunk)) {
+        Status status = reader->Finish();
+        return status.error_message();
+      }
+
+      //TODO: remove hardcoded received, replace with some client_storage
+      const std::string rcv_filename("received_" + filename);
+      if(!::try_removing_existing(rcv_filename)) {
+        std::cerr << "Couldn't remove existing file[" << rcv_filename << "]";
+        return "Requesting file failed. File[" + rcv_filename +"] exists and cannot be removed";
+      }
+
+      FileReceiver file_receiver(rcv_filename);
+      file_receiver.add_chunk(file_chunk);
+      while(reader->Read(&file_chunk)) {
+        if(!file_receiver.add_chunk(file_chunk)) {
+          std::cerr << "Can't append FileChunk for file[" << rcv_filename << "]" << std::endl;
+          return "INTERNAL ERROR: can't append FileChunks to[" + rcv_filename + "]";
+        }
+      }
+      return "Finished receiving[" + filename + "]";
+    }
+
   private:
     std::unique_ptr<Handler::Stub> stub_;
 };
@@ -92,15 +123,23 @@ int main(int argc, char** argv) {
         "localhost:50051", grpc::InsecureChannelCredentials()));
   std::string str("test string");
   std::string reply = challenge.SendString(str);
-  std::cout << "SendString: Server said: " << reply << std::endl;
+  std::cout << "SendString: " << reply << std::endl;
 
   int32_t num(14);
   reply = challenge.SendNumber(num);
-  std::cout << "SendNumber: Server said: " << reply << std::endl;
+  std::cout << "SendNumber: " << reply << std::endl;
 
   std::string filename("test.img");
   reply = challenge.SendFile(filename);
-  std::cout << "SendFile: Server said: " << reply << std::endl;
+  std::cout << "SendFile: " << reply << std::endl;
+
+  filename = "lorem.img";
+  reply = challenge.RequestFile(filename);
+  std::cout << "RequestFile: " << reply << std::endl;
+
+  filename = "lorem_ipsum.img";
+  reply = challenge.RequestFile(filename);
+  std::cout << "RequestFile: " << reply << std::endl;
 
   return 0;
 }

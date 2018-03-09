@@ -3,6 +3,7 @@
 
 #include <string>
 #include <fstream>
+#include <iostream>
 #include <cstddef>
 #include <sys/stat.h>
 
@@ -20,6 +21,23 @@ inline bool file_exists(const std::string& filename) {
   return (stat(filename.c_str(), &buffer) == 0);
 }
 
+inline bool try_removing_existing(const std::string& filename) {
+  if(!::file_exists(filename))
+    return true;
+
+  //TODO: need some config/flag in message whether to overwrite the existing file or not
+  if(std::remove(filename.c_str()) != 0) {
+    std::cerr << "The file[" << filename << "] already exists. Can't overwrite" << std::endl;
+    return false;
+  } else {
+    std::cout << "Removed existing file[" << filename << "]." << std::endl;
+  }
+
+  return true;
+}
+
+//TODO: actually use control sum in FileChunk/FileAck messages..
+
 class FileChunker {
   public:
     FileChunker(const std::string& filename):
@@ -35,15 +53,16 @@ class FileChunker {
         std::cerr << "Can't open file[" << filename_ << "]" << std::endl;
         return;
       }
+      buffer_ = new char[CHUNK_SIZE];
 
       in_file_.seekg(0, std::ios::beg);
 
       file_size_ = get_file_size(filename_);
 
-      std::cout << "Size of the file: " << file_size_ << std::endl;
+      std::cout << "Size of[" << filename_ << "]: " << file_size_ << std::endl;
 
-      number_of_chunks_ = static_cast<uint32_t>(file_size_/CHUNK_SIZE) 
-        + static_cast<uint32_t>(file_size_%CHUNK_SIZE);
+      number_of_chunks_ = static_cast<uint32_t>(file_size_/CHUNK_SIZE)
+        + static_cast<uint32_t>(static_cast<bool>(file_size_%CHUNK_SIZE));
       std::cout << "We will create: " << number_of_chunks_ << " chunks" << std::endl;
 
       in_file_.seekg(0, std::ios::beg);
@@ -51,11 +70,12 @@ class FileChunker {
     }
 
     ~FileChunker() {
+      delete[] buffer_;
       if(valid_file_)
         in_file_.close();
     }
 
-    void reset_to_begin_of_file() {
+    void reset_to_beginning_of_file() {
       number_of_chunks_ = 0;
       chunk_number_ = 0;
       in_file_.seekg(0, std::ios::beg);
@@ -67,18 +87,17 @@ class FileChunker {
         return false;
       if(current_pos_ >= file_size_)
         return false;
-
-      //std::cout << "Current position: " << current_pos_ << std::endl;
-      //std::cout << "Chunk number: " << chunk_number_ << std::endl;
       size_t read_size(CHUNK_SIZE);
       if(file_size_ - current_pos_ < CHUNK_SIZE) {
         read_size = file_size_ - current_pos_;
       }
+      //std::cout << "Current position: " << current_pos_ << std::endl;
+      //std::cout << "Chunk number: " << chunk_number_ << std::endl;
       //std::cout << "Reading now: " << read_size << std::endl;
       if(!in_file_.read(buffer_, read_size)) {
-        std::cerr << "Failed to read[" << read_size 
+        std::cerr << "Failed to read[" << read_size
                   << "] from file[" << filename_
-                  << "] at[" << current_pos_ << "]" 
+                  << "] at[" << current_pos_ << "]"
                   << std::endl;
         return false;
       }
@@ -89,7 +108,7 @@ class FileChunker {
       file_chunk.set_sizeinbytes(read_size);
       current_pos_ = in_file_.tellg();
       if(chunk_number_ == number_of_chunks_) {
-        std::cout << "Generated last chunk of file[" << filename_ << "]" << std::endl;  
+        std::cout << "Generated last chunk of file[" << filename_ << "]" << std::endl;
       }
 
       return true;
@@ -100,9 +119,9 @@ class FileChunker {
 
     bool valid_file_;
     uint32_t number_of_chunks_;
-    char buffer_[CHUNK_SIZE];
+    char* buffer_;//[CHUNK_SIZE];
     uint32_t chunk_number_;
-    std::ifstream::pos_type current_pos_;  
+    std::ifstream::pos_type current_pos_;
     size_t file_size_;
 
     std::ifstream in_file_;
@@ -133,7 +152,7 @@ class FileReceiver {
       out_file_.write(buffer.c_str(), file_chunk.sizeinbytes());
 
       if(file_chunk.islastchunk()) {
-        std::cout << "Received last chunk for file[" << filename_ 
+        std::cout << "Received last chunk for file[" << filename_
                   << "]. Size[" << this->get_file_size() << "]" << std::endl;
         out_file_.close();
       }

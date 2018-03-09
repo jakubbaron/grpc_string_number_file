@@ -3,9 +3,10 @@ syntax = "proto3";
 package challenge;
 
 service Handler {
-  rpc SayString(StringRequest) returns (StringReply) {}
-  rpc SayNumber(NumberRequest) returns (NumberReply) {}
-  rpc ReceiveFile(stream FileChunk) returns(FileAck) {}
+  rpc SayString(StringRequest)      returns (StringReply)  {}
+  rpc SayNumber(NumberRequest)      returns (NumberReply)  {}
+  rpc ReceiveFile(stream FileChunk) returns (FileAck)  {}
+  rpc RequestFile(FileRequest)      returns (stream FileChunk) {}
 }
 
 message StringRequest {
@@ -38,4 +39,8 @@ message FileAck {
   int64     SizeInBytes = 2;
   bytes     ControlSum = 3;
   string    Error = 4;
+}
+
+message FileRequest {
+  string    FileName = 1;
 }

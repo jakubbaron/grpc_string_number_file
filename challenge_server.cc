@@ -37,36 +37,57 @@ class ChallengeServiceImpl final: public Handler::Service {
     }
     Status ReceiveFile(::grpc::ServerContext* context,
         ::grpc::ServerReader< ::challenge::FileChunk>* reader,
-        ::challenge::FileAck* response) override { 
+        ::challenge::FileAck* response) override {
       ::challenge::FileChunk file_chunk;
 
       if(!reader->Read(&file_chunk))
         return Status(grpc::INTERNAL, "Can't read FileChunk from the stream");
 
       const std::string filename = storage_dir_ + file_chunk.filename();
-      if(::file_exists(filename)) {
-        //TODO: need some config/flag in message whether to overwrite the existing file or not
-        if(std::remove(filename.c_str()) != 0) {
-          std::cerr << "The file[" << filename << "] already exists. Can't overwrite" << std::endl;
-          return Status(grpc::ALREADY_EXISTS, "File[" + filename + "] already exists and can't overwrite");
-        } else {
-          std::cout << "Overwriting existing file[" << filename << "]. It already exists." << std::endl;
-        }
+      if(!::try_removing_existing(filename)) {
+        return Status(grpc::ALREADY_EXISTS, "File[" + filename + "] already exists and can't overwrite");
       }
 
       FileReceiver file_receiver(filename);
       file_receiver.add_chunk(file_chunk);
-      while(reader->Read(&file_chunk))
-      {
+      while(reader->Read(&file_chunk)) {
         if(!file_receiver.add_chunk(file_chunk)) {
           std::cerr << "Can't append FileChunk for file[" << filename << "]" << std::endl;
+          response->set_filename(filename);
+          response->set_sizeinbytes(file_receiver.get_file_size());
+          response->set_error("INTERNAL ERROR: can't append FileChunks");
+          return Status(::grpc::INTERNAL,
+                        "Can't append FileChunk to file[" + filename + "]");
         }
       }
-      response->set_filename(file_chunk.filename());
+
+      response->set_filename(filename);
       response->set_sizeinbytes(file_receiver.get_file_size());
+      response->set_error("");
 
       return Status::OK;
     }
+
+    Status RequestFile(::grpc::ServerContext* context,
+             const ::challenge::FileRequest* request,
+             ::grpc::ServerWriter< ::challenge::FileChunk>* writer) override {
+      const std::string filename = storage_dir_ + request->filename();
+      if(!::file_exists(filename)) {
+        return Status(::grpc::NOT_FOUND,
+                      "File[" + request->filename() + "] not found at the server");
+      }
+      FileChunker file_chunker(filename);
+      challenge::FileChunk file_chunk;
+      while(file_chunker.get_next_chunk(file_chunk)) {
+        if(!writer->Write(file_chunk)) {
+          std::cerr << "Broken stream!" << std::endl;
+          return Status(::grpc::INTERNAL, "Broken stream!");
+        }
+      }
+
+      return Status::OK;
+    }
+
   private:
     const std::string storage_dir_;
 };
