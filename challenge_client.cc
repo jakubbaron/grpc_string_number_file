@@ -81,7 +81,6 @@ class ChallengeClient {
       return file_ack.filename();
     }
 
-    //TODO: take second parameter where to store received file
     std::string RequestFile(const std::string& filename, const std::string& rcv_filename) {
       challenge::FileRequest file_request;
       file_request.set_filename(filename);
