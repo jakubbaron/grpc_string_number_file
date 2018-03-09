@@ -1,11 +1,5 @@
 # Challenge(C++)
 
-## Installation
-
-To install gRPC on your system, follow the instructions to build from source
-[here](../../INSTALL.md). This also installs the protocol buffer compiler
-`protoc` (if you don't have it already), and the C++ gRPC plugin for `protoc`.
-
 ## Send String, Number, and FIle C++ gRPC!
 
 Protoc definitions [StringNumberFile](challenge.proto)
