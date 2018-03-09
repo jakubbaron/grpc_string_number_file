@@ -46,7 +46,7 @@ class ChallengeClient {
       Status status = stub_->SayNumber(&context, request, &reply);
 
       if(status.ok()) {
-        return "Success!";
+        return std::to_string(reply.message());
       } else {
         std::cout << status.error_code() << ": " << status.error_message()
                   << std::endl;
