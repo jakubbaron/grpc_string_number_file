@@ -82,7 +82,7 @@ class ChallengeClient {
     }
 
     //TODO: take second parameter where to store received file
-    std::string RequestFile(const std::string& filename) {
+    std::string RequestFile(const std::string& filename, const std::string& rcv_filename) {
       challenge::FileRequest file_request;
       file_request.set_filename(filename);
 
@@ -96,8 +96,6 @@ class ChallengeClient {
         return status.error_message();
       }
 
-      //TODO: remove hardcoded received, replace with some client_storage
-      const std::string rcv_filename("received_" + filename);
       if(!::try_removing_existing(rcv_filename)) {
         std::cerr << "Couldn't remove existing file[" << rcv_filename << "]";
         return "Requesting file failed. File[" + rcv_filename +"] exists and cannot be removed";
@@ -134,11 +132,13 @@ int main(int argc, char** argv) {
   std::cout << "SendFile: " << reply << std::endl;
 
   filename = "lorem.img";
-  reply = challenge.RequestFile(filename);
+  std::string rcv_filename("received_" + filename);
+  reply = challenge.RequestFile(filename, rcv_filename);
   std::cout << "RequestFile: " << reply << std::endl;
 
   filename = "lorem_ipsum.img";
-  reply = challenge.RequestFile(filename);
+  rcv_filename = "received_" + filename;
+  reply = challenge.RequestFile(filename, rcv_filename);
   std::cout << "RequestFile: " << reply << std::endl;
 
   return 0;
